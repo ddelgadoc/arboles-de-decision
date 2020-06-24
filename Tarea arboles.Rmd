@@ -1,0 +1,355 @@
+---
+title: "Aplicación del modelo de Machine Learning árboles de desición a la clasificación de marcas de jugos y la predicción del precio de los jugos"
+author: "Deyli"
+date: "17 de noviembre de 2018"
+output: word_document
+---
+#Cargar archivo y visualizar
+```{r}
+M=read.table("juice.txt",header = TRUE)
+head(M)
+names(M)
+store=as.factor(M$store) #convertir la variable store a categórica(factor)
+store=relevel(store,ref = "4") 
+```
+#División de las muestras para la validación 
+```{r}
+set.seed(54321)
+sub=sample(1:nrow(M),0.75*(nrow(M)))
+train=M[sub,] #muestra de entrenamiento, el 75% de la muestra total
+test=M[-sub,] #muestra de validación
+```
+
+#Entrenamiento de los diferentes modelos de árboles
+##Contruir modelo con libreria Rpart
+```{r}
+library(rpart)
+A_Rp=rpart(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data = train,method = "class")
+A_Rp
+summary(A_Rp)
+#Dibujo de arbol con leyenda
+plot(A_Rp);text(A_Rp,cex=0.8) 
+#Gráfico de error en funcion Cp(Complejidad)
+graficorp=plotcp(A_Rp)   # Ajustar el parámetro de Cp del modelo,ayuda a encontrar un modelo con menos trabajo computacional con errores bajos
+#Tabla de errores de cada cp
+tablerp=printcp(A_Rp)
+#Dibujo del arbol personalizado
+library(rpart.plot)
+arbol=rpart.plot(A_Rp,main="Clasificación de las marcas de los jugos", ycompress=TRUE,extra=1,branch=1,varlen=0,digits=4,shadow.col="red",xsep="/",split.cex=1.1,split.suffix="?",split.box.col="lightgray",split.border.col="blue")
+```
+
+###Ajustar  el parámetro de complejidad(CP) del modelo
+```{r}
+A_rp_modificado=rpart(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data = train,method = "class",control=rpart.control(cp=0.073))  
+grafico_modificado=plotcp(A_rp_modificado) #nuevo gráfico para el modelo ajustado
+A_rp_modificado
+tabla_rp_modificado=printcp(A_rp_modificado)
+```
+###Aplicar la validación cruzada al modelo 
+```{r}
+A_rp_vx=rpart(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data=train, method="class", control=rpart.control(cp=0, xval=10)) #10 k fold cross-validations y ajuste del CP
+#Tabla de errores de cada cp
+tabla.xv=printcp(A_rp_vx)
+#Gráfico de error en funcion Cp
+grafico.xv=plotcp(A_rp_vx)
+#Dibujo de arbol con leyenda
+plot(A_rp_vx); text(A_rp_vx,cex=0.5)
+A_rp_vx
+```
+###Ajustar el CP en validación cruzada
+```{r}
+A_rp_vx_Cp=rpart(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data=train, method="class", control=rpart.control(cp=0.071, xval=10))
+plot(A_rp_vx); text(A_rp_vx,cex=0.5)
+A_rp_vx_Cp
+grafico.xv=plotcp(A_rp_vx_Cp)
+summary(A_rp_vx_Cp)
+```
+
+##Contruir modelo con libreria TRee
+```{r}
+library(tree)
+A_T=tree(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data=train, method="class")
+A_T
+summary(A_T)
+plot(A_T);text(A_T,cex=0.8) #dibujar árbol
+
+```
+##Contruir modelo con la Libreria Ctree
+```{r}
+library(party)
+library(partykit)
+A_Ctree=ctree(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data=train,control=ctree_control(maxdepth=8))
+summary(A_Ctree)
+plot(A_Ctree) #dibujar el árbol
+A_Ctree
+```
+#Evaluación y predicciones de los modelos
+##Predecir con Rpart en train
+```{r}
+library(rpart)
+A_rp_vx=rpart(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data=train, method="class", control=rpart.control(cp=0, xval=10)) #modelo con validación cruzada
+pred=predict(A_rp_vx,newdata=train,type="class")
+table(Real=M[sub,"choice"], predicted=pred)  #matriz de difusión, con la que se evalua los modelo a partir del error de mala clasificación
+#Predice la probabilidad de pertenencia a cada clase
+predc_p=predict(A_rp_vx,newdata=train)
+predc_p
+#Predecir una obervación nueva
+pred_o=predict(A_rp_vx,newdata = data.frame(loyaltyCH=c(0.933497),week=c(249),priceCH=c(1.86),priceMM=c(2.09),discountCH=c(0),discountMM=c(0),loyaltyMM=c(0.0665),store=c(1)),type="class")
+pred_o #predicción para la nueva observación
+```
+##Predecir con Rpart en test
+```{r}
+A_rp_vx=rpart(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data=train, method="class", control=rpart.control(cp=0, xval=10)) 
+pred=predict(A_rp_vx,newdata=test,type="class")
+table(Real=M[-sub,"choice"], predicted=pred)  #matriz de difusión, con la que se evalua los modelo a partir del error de mala clasificación
+#Predice la probabilidad de pertenencia a cada clase
+predc_p=predict(A_rp_vx,newdata=test)
+predc_p
+```
+##Predecir modelo Tree con test
+```{r}
+A_T=tree(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data=train, method="class")
+pred_T=predict(A_T,newdata = test,type = "class")
+table(Real=M[-sub,"choice"], predicted=pred_T) #matriz de difusión, con la que se evalua los modelo a partir del error de mala clasificación
+#Predice la probabilidad de pertenencia a cada clase
+predc_Tp=predict(A_T,newdata=test)
+predc_Tp
+```
+##Predecir modelo Tree CON TRAIN
+```{r}
+A_T=tree(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data=train, method="class")
+pred_T=predict(A_T,newdata = train,type = "class")
+table(Real=M[sub,"choice"], predicted=pred_T)
+#Predice pertenencia de probabilidad a cada clase
+predc_Tp=predict(A_T,newdata=train)
+predc_Tp
+```
+
+##Predecir modelo CTree con test
+```{r}
+A_Ctree=ctree(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data=train,control=ctree_control(maxdepth=8))
+pred_CT=predict(A_Ctree,newdata = test)
+table(Real=M[-sub,"choice"], predicted=pred_CT)
+```
+##Predecir modelo CTree CON TRAIN
+```{r}
+A_Ctree=ctree(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data=train,control=ctree_control(maxdepth=8))
+pred_CT=predict(A_Ctree,newdata = train)
+table(Real=M[sub,"choice"], predicted=pred_CT)
+```
+#Entrenamiento de los  modelos de árboles con métodos de agrupación 
+##Random Forest con mtry= total
+```{r}
+A.b=randomForest(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store, data=train ,ntree=500,maxnodes=100, importance=TRUE, mtry=7)
+summary(A.b)
+print(A.b)
+```
+###Importancia de variables
+```{r}
+importance(A.b)
+varImpPlot(A.b)
+```
+##Bagging con adabag
+```{r}
+library(adabag)
+library(rpart)
+A.bag=bagging(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store,data=train,control=rpart.control(cp=0,xval=0))
+A.bag
+summary(A.bag)
+```
+###Importancia de variables
+```{r}
+importanceplot(A.bag)
+
+```
+##Random Forest con mtry= p/3
+```{r}
+A.rf=randomForest(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store, data=train ,ntree=500,maxnodes=100, importance=TRUE, mtry=2)
+summary(A.rf)
+print(A.rf)
+#Importancia variables
+importance(A.rf)
+varImpPlot(A.rf)
+```
+##Predecir Random Forest(mtry= total).Matriz DIFUSION 
+```{r}
+predc.rf=predict(A.b,newdata=test,type="response",norm.votes=TRUE,predict.all=FALSE,proximity=FALSE,nodes=FALSE)
+table(Real=test$choice, predecido=predc.rf) 
+```
+##Predecir Random Forest(mtry= p/3).Matriz DIFUSION 
+```{r}
+predc.rf.3=predict(A.rf,newdata=test,type="response",norm.votes=TRUE,predict.all=FALSE,proximity=FALSE,nodes=FALSE)
+table(Real=M[-sub,"choice"], predecido=predc.rf.3)
+```
+##Predecir BAGGING .Matriz DIFUSION 
+```{r}
+pred.b=predict(A.bag,newdata=test,type="response",norm.votes=TRUE,predict.all=FALSE,proximity=FALSE,nodes=FALSE)
+pred.b
+```
+
+#Contruir el logit a partir de tree
+```{r}
+modelo_M=glm(choice~loyaltyMM+discountMM+priceMM,data =train,family = binomial)
+summary(modelo_M)
+coef(modelo_M)
+```
+
+##Predecir modelo logit con muestra validación
+```{r}
+prob = predict(modelo_M,newdata=test,type = "response")
+pred= rep("CH",268)
+pred[prob>0.52]="MM"
+choice=test$choice
+table(pred,choice)
+```
+#Contruir el logit a partir de ramdon forest
+```{r}
+modelo_R=glm(choice~loyaltyMM+week+store,data =train,family = binomial)
+summary(modelo_R)
+coef(modelo_R)
+```
+##Predecir modelo logit con muestra validación
+```{r}
+prob = predict(modelo_R,newdata=test,type = "response")
+pred= rep("CH",268)
+pred[prob>0.52]="MM"
+choice=test$choice
+table(pred,choice)
+```
+
+#Arbol de regresión precio en función de regresores
+##Preparar datos
+```{r}
+price=c(M$priceCH,M$priceMM)
+marca=c(rep("CH",1070),rep("MM",1070))
+M_R=data.frame(M[,1:3],price,M[,6:10],marca)
+M_R
+str(M_R)
+set.seed(54321)
+sub_R=sample(1:nrow(M_R),0.75*(nrow(M_R)))
+train_R=M_R[sub_R,] #muestra de entrenamiento
+test_R=M_R[-sub_R,] #muestra de validacion
+M_R
+```
+##Rpart
+```{r}
+Ar.rp=rpart(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R, control=rpart.control(cp=0,xval=10))
+Ar.rp 
+summary(Ar.rp)
+plot(Ar.rp);text(Ar.rp,cex=0.1) 
+tablerp=printcp(Ar.rp) # indica el valor de cp, el numero de particiones ("niveles") que tiene el arbol, y el error relativo.
+graficorp=plotcp(Ar.rp) #grafico que presenta el error en funcion de la complejidad
+```
+###Controlar la complejidad del árbol
+```{r}
+Ar.rp.cp=rpart(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R, control=rpart.control(cp=0.0021,xval=10))  
+Ar.rp.cp
+summary(Ar.rp.cp)
+graficorpcp=plotcp(Ar.rp.cp)
+plot(Ar.rp.cp);text(Ar.rp.cp,cex=0.6)
+```
+##Arbol de regresión con Tree
+```{r}
+Atr.tr=tree(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R)
+Atr.tr
+summary(Atr.tr)
+plot(Atr.tr);text(Atr.tr,cex=0.8)
+```
+##Arbol de regresión con CTree
+```{r}
+Ar.party=ctree(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R,control=ctree_control(maxdepth=4))
+summary(Ar.party)
+plot(Ar.party)
+```
+##predicción con rpart en muestra de validación
+```{r}
+predc.rp=predict(Ar.rp.cp,newdata=test_R) 
+predc.rp
+data.frame(observado=test_R$price, prediccion=predc.rp) # tabla con los resultados
+observados=test_R$price
+previstos=predc.rp
+residuos=observados-previstos
+data.frame(observados, previstos,residuos)
+#Calculo ECM
+x= vector()
+for(n in residuos) {
+  x <- c(x,n^2)  
+}
+R2 =sum(x)/nrow(test_R)
+R2
+```
+##Predecir Tree
+```{r}
+predc.tr=predict(Atr.tr,newdata=test_R)
+predc.tr
+summary(Atr.tr)
+data.frame(observado=test_R$price, prediccion=predc.tr)
+observados=test_R$price
+previstos=predc.tr
+residuos=observados-previstos
+data.frame(observados, previstos,residuos)
+#Calculo ECM
+x= vector()
+for(n in residuos) {
+  x <- c(x,n^2)  
+}
+R2 =sum(x)/nrow(test_R)
+R2
+```
+##Bagging con random forest 
+```{r}
+A.ba.R=randomForest(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R,ntree=500,maxnodes=100, importance=TRUE, mtry=7)
+summary(A.ba.R)
+print(A.ba.R)
+importance(A.ba.R)
+varImpPlot(A.ba.R)
+```
+##Bosque Random Forest
+```{r}
+A.rf=randomForest(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R,ntree=500,maxnodes=100, importance=TRUE, mtry=2)
+summary(A.rf)
+print(A.rf)
+importance(A.rf)
+varImpPlot(A.rf)
+```
+## Bagging (este no me funciona por eso lo hice con ramdon forest)
+```{r}
+arbolr.bag=bagging(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R,control=rpart.control(cp=0,xval=0))
+arbolr.bag
+summary(arbolr.bag)
+```
+##predecir Random Forest con datos de validación
+```{r}
+predc.rf=predict(A.rf,newdata=test_R,type="response")
+predc.rf
+data.frame(observed=test_R$price, predicted=predc.rf)
+observados.rf=test_R$price
+previstos.rf=predc.rf
+residuos.rf=observados.rf-previstos.rf
+data.frame(observados.rf, previstos.rf,residuos.rf)
+#Calculo ECM
+x= vector()
+for(n in residuos) {
+  x <- c(x,n^2)  
+}
+R2 =sum(x)/nrow(test_R)
+R2
+```
+##predecir bagging 
+```{r}
+predc.rf=predict(A.ba.R,newdata=test_R,type="response")
+predc.rf
+data.frame(observed=test_R$price, predicted=predc.rf)
+observados.rf=test_R$price
+previstos.rf=predc.rf
+residuos.rf=observados.rf-previstos.rf
+data.frame(observados.rf, previstos.rf,residuos.rf)
+x= vector()
+for(n in residuos) {
+  x <- c(x,n^2)  
+}
+R2 =sum(x)/nrow(test_R)
+R2
+```
+
+
