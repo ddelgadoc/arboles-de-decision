@@ -1,12 +1,12 @@
 ---
-title: "Aplicación del modelo de Machine Learning árboles de desición a la clasificación de marcas de jugos y la predicción del precio de los jugos"
+title: "Aplicación del modelo de Machine Learning árboles de desición a la clasificación de marcas de jugos vendidas y la predicción del precio de los jugos"
 author: "Deyli"
 date: "17 de noviembre de 2018"
 output: word_document
 ---
 #Cargar archivo y visualizar
 ```{r}
-M=read.table("juice.txt",header = TRUE)
+M=read.table("juicebasedatos.txt",header = TRUE)
 head(M)
 names(M)
 store=as.factor(M$store) #convertir la variable store a categórica(factor)
@@ -20,7 +20,7 @@ train=M[sub,] #muestra de entrenamiento, el 75% de la muestra total
 test=M[-sub,] #muestra de validación
 ```
 
-#Entrenamiento de los diferentes modelos de árboles
+#Entrenamiento de los diferentes modelos de árboles para clasificación de la marca vendida
 ##Contruir modelo con libreria Rpart
 ```{r}
 library(rpart)
@@ -138,10 +138,11 @@ pred_CT=predict(A_Ctree,newdata = train)
 table(Real=M[sub,"choice"], predicted=pred_CT)
 ```
 #Entrenamiento de los  modelos de árboles con métodos de agrupación 
-##Random Forest con mtry= total
+##Random Forest con mtry= total de variables
 ```{r}
-A.b=randomForest(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store, data=train ,ntree=500,maxnodes=100, importance=TRUE, mtry=7)
-summary(A.b)
+library(randomForest)
+A.b=randomForest(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store, data=train ,ntree=500,maxnodes=100, importance=TRUE, mtry=7) #500 árboles
+summary(A.b)  #devuelve matriz de difusión o confusion matriz para train con el error de mala clasificación de train
 print(A.b)
 ```
 ###Importancia de variables
@@ -149,7 +150,7 @@ print(A.b)
 importance(A.b)
 varImpPlot(A.b)
 ```
-##Bagging con adabag
+##Bagging con librería adabag
 ```{r}
 library(adabag)
 library(rpart)
@@ -159,54 +160,55 @@ summary(A.bag)
 ```
 ###Importancia de variables
 ```{r}
-importanceplot(A.bag)
+importanceplot(A.bag) #gráfico de importancia de variables(tipo gráfico de barras)
 
 ```
-##Random Forest con mtry= p/3
+##Random Forest con mtry= p/3 p--> No de variables del modelo
 ```{r}
-A.rf=randomForest(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store, data=train ,ntree=500,maxnodes=100, importance=TRUE, mtry=2)
-summary(A.rf)
+A.rf=randomForest(choice~week+priceCH+priceMM+discountCH+discountMM+loyaltyMM+store, data=train ,ntree=500,maxnodes=100, importance=TRUE, mtry=2) #Se toman 2 variables para los ensayos
+summary(A.rf)  #devuelve matriz de difusión o confusion matriz para train con el error de mala clasificación de train
 print(A.rf)
 #Importancia variables
 importance(A.rf)
 varImpPlot(A.rf)
 ```
-##Predecir Random Forest(mtry= total).Matriz DIFUSION 
+#Predicciones para los métodos de agrupación
+##Random Forest(mtry= total) muestra test
 ```{r}
 predc.rf=predict(A.b,newdata=test,type="response",norm.votes=TRUE,predict.all=FALSE,proximity=FALSE,nodes=FALSE)
-table(Real=test$choice, predecido=predc.rf) 
+table(Real=test$choice, predecido=predc.rf) #Matriz de difusión
 ```
-##Predecir Random Forest(mtry= p/3).Matriz DIFUSION 
+##Random Forest(mtry= p/3) muestra test 
 ```{r}
 predc.rf.3=predict(A.rf,newdata=test,type="response",norm.votes=TRUE,predict.all=FALSE,proximity=FALSE,nodes=FALSE)
-table(Real=M[-sub,"choice"], predecido=predc.rf.3)
+table(Real=M[-sub,"choice"], predecido=predc.rf.3) #Matriz de difusión
 ```
-##Predecir BAGGING .Matriz DIFUSION 
+##BAGGING muestra test
 ```{r}
 pred.b=predict(A.bag,newdata=test,type="response",norm.votes=TRUE,predict.all=FALSE,proximity=FALSE,nodes=FALSE)
-pred.b
+pred.b  #Matriz de difusión
 ```
 
-#Contruir el logit a partir de tree
+#Contruir Modelo con la técnica Logit(Regresión logística) a partir de la importancia de variables del modelo tree(modelo con el menor error en test)
 ```{r}
 modelo_M=glm(choice~loyaltyMM+discountMM+priceMM,data =train,family = binomial)
 summary(modelo_M)
-coef(modelo_M)
+coef(modelo_M) #tabla de coeficientes y Pvalue de la ecuación de regresión logística
 ```
 
 ##Predecir modelo logit con muestra validación
 ```{r}
 prob = predict(modelo_M,newdata=test,type = "response")
 pred= rep("CH",268)
-pred[prob>0.52]="MM"
+pred[prob>0.52]="MM" #0.52 valor de corte se toma valor de la 1ra partición de la variable más importante del árbol Tree antes obtenido
 choice=test$choice
-table(pred,choice)
+table(pred,choice) #tabla de confusión
 ```
-#Contruir el logit a partir de ramdon forest
+#Contruir Modelo con la técnica Logit(Regresión logística) a partir de la importancia de variables del modelo RandomForest(elimina preferencia de rangoen las variables importantes)
 ```{r}
 modelo_R=glm(choice~loyaltyMM+week+store,data =train,family = binomial)
 summary(modelo_R)
-coef(modelo_R)
+coef(modelo_R) #tabla de coeficientes y Pvalue de la ecuación de regresión logística
 ```
 ##Predecir modelo logit con muestra validación
 ```{r}
@@ -214,71 +216,70 @@ prob = predict(modelo_R,newdata=test,type = "response")
 pred= rep("CH",268)
 pred[prob>0.52]="MM"
 choice=test$choice
-table(pred,choice)
+table(pred,choice) #tabla de confusión
 ```
 
-#Arbol de regresión precio en función de regresores
-##Preparar datos
+#Arbol de regresión para predecir el precio de de los jugos de frutas 
+##Preprocesamiento de los datos para poder predecir el precio
 ```{r}
-price=c(M$priceCH,M$priceMM)
-marca=c(rep("CH",1070),rep("MM",1070))
-M_R=data.frame(M[,1:3],price,M[,6:10],marca)
-M_R
+price=c(M$priceCH,M$priceMM) #unir las dos columnas de precio de cada marca en una sola columna de 2140 observaciones
+marca=c(rep("CH",1070),rep("MM",1070)) #crear la columna de referencia, que indica a que marca se refiere cada precio
+M_R=data.frame(M[,1:3],price,M[,6:10],marca) # crear un dataframe con todas las variable, excepto la variable priceCH y priceMM que se sustituye por la columna price y se agrega la columna marca
+head(M_R)
 str(M_R)
 set.seed(54321)
-sub_R=sample(1:nrow(M_R),0.75*(nrow(M_R)))
+sub_R=sample(1:nrow(M_R),0.75*(nrow(M_R))) #dividir en muestra de test y train
 train_R=M_R[sub_R,] #muestra de entrenamiento
 test_R=M_R[-sub_R,] #muestra de validacion
-M_R
 ```
-##Rpart
+##Entrenar arbol con Rpart
 ```{r}
-Ar.rp=rpart(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R, control=rpart.control(cp=0,xval=10))
+Ar.rp=rpart(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R, control=rpart.control(cp=0,xval=10)) #validación cruzada k fold=10
 Ar.rp 
 summary(Ar.rp)
-plot(Ar.rp);text(Ar.rp,cex=0.1) 
-tablerp=printcp(Ar.rp) # indica el valor de cp, el numero de particiones ("niveles") que tiene el arbol, y el error relativo.
-graficorp=plotcp(Ar.rp) #grafico que presenta el error en funcion de la complejidad
+plot(Ar.rp);text(Ar.rp,cex=0.1)  #dibujar arbol
+tablerp=printcp(Ar.rp) # indica el valor de cp, el número de particiones ("niveles") que tiene el arbol, y el error relativo.
+graficorp=plotcp(Ar.rp) #grafico que presenta el error en train en funcion de la complejidad(CP)
 ```
-###Controlar la complejidad del árbol
+###Ajustar el parámetro complejidad del árbol(CP)
 ```{r}
-Ar.rp.cp=rpart(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R, control=rpart.control(cp=0.0021,xval=10))  
+Ar.rp.cp=rpart(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R, control=rpart.control(cp=0.0021,xval=10))  #se toma valor de cp a partir del cual el error ya no varía mucho
 Ar.rp.cp
 summary(Ar.rp.cp)
 graficorpcp=plotcp(Ar.rp.cp)
-plot(Ar.rp.cp);text(Ar.rp.cp,cex=0.6)
+plot(Ar.rp.cp);text(Ar.rp.cp,cex=0.6) #dibujar arbol
 ```
-##Arbol de regresión con Tree
+##Entrenar Arbol de regresión con Tree
 ```{r}
 Atr.tr=tree(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R)
 Atr.tr
 summary(Atr.tr)
-plot(Atr.tr);text(Atr.tr,cex=0.8)
+plot(Atr.tr);text(Atr.tr,cex=0.8) #dibujar arbol
 ```
-##Arbol de regresión con CTree
+##Entrenar Arbol de regresión con CTree
 ```{r}
 Ar.party=ctree(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R,control=ctree_control(maxdepth=4))
 summary(Ar.party)
-plot(Ar.party)
+plot(Ar.party) #dibujar arbol
 ```
-##predicción con rpart en muestra de validación
+##Predicción con rpart en muestra test
 ```{r}
-predc.rp=predict(Ar.rp.cp,newdata=test_R) 
+predc.rp=predict(Ar.rp.cp,newdata=test_R)  #modelo con CP ajustado
 predc.rp
-data.frame(observado=test_R$price, prediccion=predc.rp) # tabla con los resultados
+data.frame(observado=test_R$price, prediccion=predc.rp) # tabla con los resultados del valor real y las predicciones
 observados=test_R$price
 previstos=predc.rp
-residuos=observados-previstos
+residuos=observados-previstos #calculo de los residuos(error)
 data.frame(observados, previstos,residuos)
-#Calculo ECM
+#Calculo ECM(error cuadrático medio)
 x= vector()
 for(n in residuos) {
   x <- c(x,n^2)  
 }
 R2 =sum(x)/nrow(test_R)
-R2
+R2 #valor del ECM para la muestra de validación 
 ```
-##Predecir Tree
+##Predecir con Tree para la muestra test
 ```{r}
 predc.tr=predict(Atr.tr,newdata=test_R)
 predc.tr
@@ -288,23 +289,24 @@ observados=test_R$price
 previstos=predc.tr
 residuos=observados-previstos
 data.frame(observados, previstos,residuos)
-#Calculo ECM
+#Calculo ECM(error cuadrático medio)
 x= vector()
 for(n in residuos) {
   x <- c(x,n^2)  
 }
 R2 =sum(x)/nrow(test_R)
-R2
+R2 #valor del ECM para la muestra de validación
 ```
-##Bagging con random forest 
+##Entrenamiento de métodos de agrupación.Bagging usando random forest 
 ```{r}
-A.ba.R=randomForest(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R,ntree=500,maxnodes=100, importance=TRUE, mtry=7)
+library(randomForest)
+A.ba.R=randomForest(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R,ntree=500,maxnodes=100, importance=TRUE, mtry=7) #al ser el total de variables(7), random forest se comporta como un bagging
 summary(A.ba.R)
 print(A.ba.R)
 importance(A.ba.R)
 varImpPlot(A.ba.R)
 ```
-##Bosque Random Forest
+##Entrenamiento de métodos de agrupación.Random Forest
 ```{r}
 A.rf=randomForest(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R,ntree=500,maxnodes=100, importance=TRUE, mtry=2)
 summary(A.rf)
@@ -312,13 +314,15 @@ print(A.rf)
 importance(A.rf)
 varImpPlot(A.rf)
 ```
-## Bagging (este no me funciona por eso lo hice con ramdon forest)
+##Entrenamiento de métodos de agrupación. Bagging 
 ```{r}
+library(adabag)
+library(rpart)
 arbolr.bag=bagging(price~choice+marca+week+discountCH+discountMM+loyaltyMM+store,data=train_R,control=rpart.control(cp=0,xval=0))
 arbolr.bag
 summary(arbolr.bag)
 ```
-##predecir Random Forest con datos de validación
+##Predecir Random Forest con datos de test
 ```{r}
 predc.rf=predict(A.rf,newdata=test_R,type="response")
 predc.rf
@@ -327,7 +331,7 @@ observados.rf=test_R$price
 previstos.rf=predc.rf
 residuos.rf=observados.rf-previstos.rf
 data.frame(observados.rf, previstos.rf,residuos.rf)
-#Calculo ECM
+#Calculo ECM(error cuadrático medio)
 x= vector()
 for(n in residuos) {
   x <- c(x,n^2)  
@@ -335,7 +339,7 @@ for(n in residuos) {
 R2 =sum(x)/nrow(test_R)
 R2
 ```
-##predecir bagging 
+##Predecir bagging usando randomforest para test
 ```{r}
 predc.rf=predict(A.ba.R,newdata=test_R,type="response")
 predc.rf
@@ -344,6 +348,7 @@ observados.rf=test_R$price
 previstos.rf=predc.rf
 residuos.rf=observados.rf-previstos.rf
 data.frame(observados.rf, previstos.rf,residuos.rf)
+#Calculo ECM(error cuadrático medio)
 x= vector()
 for(n in residuos) {
   x <- c(x,n^2)  
